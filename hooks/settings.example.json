@@ -1,0 +1,151 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.claude/hooks/session-start.sh rules",
+            "statusMessage": "Injecting orchestration"
+          },
+          {
+            "type": "command",
+            "command": "$HOME/.claude/hooks/session-start.sh handoff",
+            "statusMessage": "Reading HANDOFF.md"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "_note": "main session: a prompt containing plec/nesupravegheat arms autonomous mode (marker per session) and injects its rules; any later prompt without the signal disarms it",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.claude/hooks/autonom.sh prompt"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "_note": "while autonomous mode is armed, questions and plan mode are denied with a reason for the model",
+        "matcher": "AskUserQuestion|EnterPlanMode",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.claude/hooks/autonom.sh gate"
+          }
+        ]
+      },
+      {
+        "_note": "any Read of a /tool-results/ file is denied for main and sub-agents alike; the rest (image, re-read, whole big file) is main-session only",
+        "matcher": "Read",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.claude/hooks/read-mare.sh"
+          }
+        ]
+      },
+      {
+        "_note": "main only: big whole reads and big heredoc writes into the project, plus the commit gate before git commit",
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.claude/hooks/bash-mare.sh"
+          }
+        ]
+      },
+      {
+        "_note": "main only: over 20 written lines in Write/Edit belong to scribe/implementer",
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.claude/hooks/write-mare.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.claude/hooks/brief-mare.sh"
+          },
+          {
+            "type": "command",
+            "command": "$HOME/.claude/hooks/agenti-vii.sh check"
+          }
+        ]
+      },
+      {
+        "_note": "main session, every tool: context guard scoped to main",
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.claude/hooks/context-agent.sh --scope main"
+          }
+        ]
+      },
+      {
+        "_note": "implementer*/scripter* sub-agents only, measured on the worker transcript <dir(transcript_path)>/<session_id>/subagents/agent-<agent_id>.jsonl: warns once at 150000 tokens of context, denies every tool except Bash at 220000, and nudges once on the 3rd build/test/verifica-* Bash call; per-type thresholds are opt-in via --praguri-tip; triggers logged in /tmp/claude-hooks/context-agent.jsonl",
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.claude/hooks/context-agent.sh --praguri-tip"
+          }
+        ]
+      },
+      {
+        "_note": "main and every sub-agent: an Edit/Write/MultiEdit that would add a comment block of 2+ lines, a comment line over 160 chars, or over 25% comments in the added lines; sub-agents are denied on block/long line, main and the ratio criterion only get additionalContext; logs to /tmp/claude-hooks/comentarii-<session>.jsonl",
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.claude/hooks/comentarii-cod.sh"
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.claude/hooks/agenti-vii.sh start"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.claude/hooks/raport-lung.sh"
+          },
+          {
+            "type": "command",
+            "command": "$HOME/.claude/hooks/agenti-vii.sh stop"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.claude/hooks/session-metrics.sh"
+          }
+        ]
+      }
+    ]
+  }
+}
