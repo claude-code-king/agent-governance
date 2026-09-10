@@ -21,7 +21,9 @@ Steps, in order:
    ends up with fewer entries than the source.
 6. Deletes and replaces `agents/`, `hooks/`, `commands/`, `skills/` under
    `~/.claude`, and copies `CLAUDE.md`, `orchestrare.md`, `orchestrare-v17.md`,
-   `settings.json` from `templates/` and `hooks/settings.example.json`.
+   `settings.json` from `templates/` and `hooks/settings.example.json`. The repo ships
+   no `skills/` yet: `easy_install.sh` backs up your `~/.claude/skills/`, deletes it
+   and recreates it empty — restore yours from the backup if you need them.
 7. Rewrites the `REPO_DIR=` line inside the installed `hooks/session-metrics.sh`
    to point at this clone (or at `$AGENT_GOVERNANCE_DIR` if you set it), so
    `TRENDS.md` generation finds the right repo later.

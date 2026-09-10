@@ -4,8 +4,9 @@ Governance for Claude Code agent sessions: policies, enforcement hooks, and offl
 telemetry. Cheap models do the work, the expensive model only plans and audits, and hooks
 stop verbose agents from flooding the orchestrator's context.
 
-Current version: **v1.8** (frozen) — the rules aren't changing anymore, it's now being
-tested on product sessions (≥3 from 2026-09-05T14:45 onward, until a verdict is reached).
+Current version: **v1.8.2**. The governance rules are frozen at v1.8; v1.8.1 and v1.8.2
+changed only the analyzer and the effort gate hook. v1.8 is the current stable ruleset,
+validated on 19 product sessions from 2026-09-05 onward; see Measured results.
 v1.8.1 (2026-09-09) changes nothing in the governance itself: only the analyzer (`tools/session_metrics.py`) was fixed so it stops reporting waste that wasn't there (false `big_tool_result_main` on image reads, false `batchable_bash` on non-mutating chains).
 Phase-based effort is back (plan medium / implementation low; as of v1.8.2 a PreToolUse gate
 blocks tools until claude_code_king runs `/effort <target>` and types go, Claude Code
@@ -111,7 +112,8 @@ lot, vs opus-medium 4/4/3, eval 9–10/11, $2.52 (confounds listed in the same s
 settings.json does not hot-reload effort, and SessionStart writes the target too late for
 the current session. Fix: SessionEnd writes medium for the next launch, and a new PreToolUse
 gate denies tools until effective effort matches the `/effort <target>` claude_code_king ran, then
-he types go. See `docs/DECIZII.md` «v1.8.2 — effort gate».
+he types go. See `docs/DECIZII.md` «v1.8.2 — effort gate» (private decision log, see note
+in Reproduce it).
 
 ## v1.8 (2026-09-05)
 
@@ -365,42 +367,42 @@ were mechanical.
 
 ## Measured results
 
-From `metrics/baseline-2026-08.md`, regenerated 2026-08-30 over 51 kept sessions
-(`metrics-local/TRENDS.md`): 18 from before any rule set existed ("older"), down to 12 on
-the latest version with ≥5 sessions ("v1.2").
+From `metrics/trends-2026-09.md`, generated 2026-09-10 over the product split, 67
+sessions, from a 125-session corpus. `older` = sessions before v1.0, no governance
+rules applied yet. `product` = real project sessions; the R&D split (sessions spent
+building this repo) is in `metrics/trends-2026-09.md`.
 
-| metric | older (18 sessions) | v1.2 (12 sessions) |
-|---|---:|---:|
-| $ actual/session | 20.69 | 25.37 |
-| main output % | 46.1% | 81.7% |
-| issues/session (H/M/L) | 14.6 (2.2/8.3/4.2) | 10.4 (1.2/5.6/3.7) |
-| est. wasted/session | 73.4k tokens | 120.8k tokens |
-| quality (mean · rated/n) | — · 0/18 | 4.3 · 7/12 |
+| version | sessions | $/session | saved % (vs Fable-only) | wasted tok % | issues/session (H/M/L) | quality | effort |
+|---|---:|---:|---:|---:|---:|---:|---|
+| older | 13 | $23.54 | 73.8% | 4.5% | 19.2 (2.5/11.2/5.5) | — · 0/13 | high 13 |
+| v1.0 | 7 | $31.12 | 79.5% | 5.3% | 23.7 (5.0/13.4/5.3) | — · 0/7 | high 7 |
+| v1.1 | 10 | $28.03 | 79.6% | 4.7% | 16.7 (3.2/8.6/4.9) | 4.5 · 2/10 | high 10 |
+| v1.2 | 10 | $24.19 | 81.4% | 4.5% | 17.7 (3.5/10.2/4.0) | 4.2 · 6/10 | high 10 |
+| v1.4 | 2 | $28.12 | 88.3% | 10.2% | 22.5 (5.5/15.0/2.0) | 5.0 · 1/2 | high 2 |
+| v1.5.2 | 1 | $3.85 | 8.3% | 3.1% | 3.0 (2.0/1.0/0.0) | — · 0/1 | high 1 |
+| v1.7 | 4 | $25.31 | 87.7% | 3.3% | 19.2 (3.2/11.5/4.5) | 4.3 · 3/4 | medium 2 · low 1 · high 1 |
+| v1.7.5 | 1 | $57.72 | 89.6% | 0.8% | 27.0 (7.0/18.0/2.0) | 4.0 · 1/1 | medium 1 |
+| v1.8 | 19 | $15.62 | 84.9% | 1.4% | 9.2 (1.3/6.4/1.5) | 4.9 · 11/19 | low 16 · medium 3 |
 
-The comparable structural metric is the **agent final report** — the payload that crosses
-from a disposable subagent context into the orchestrator's permanent one. Medians by slot,
-older vs v1.2: implementer/implementer-max 2,578/3,140 → 2,130/2,378 chars; auditor
-1,776 → 2,134; explorer 4,532 → 2,133; scribe 678 → 614. Full max/median-by-agent-type
-tables are in the baseline doc.
+Versions with 0 sessions (v1.3, v1.4.1, v1.5, v1.5.1, v1.5.3, v1.6, v1.6.1) are omitted.
 
-Not a controlled experiment: `older`'s 18 kept sessions span 4 projects, v1.2's 12 span
-5 — the project mix did not shrink. Two numbers moved the wrong way: `$ actual/session` rose
-(20.69 → 25.37) instead of fell, and so did `est. wasted/session` (73.4k → 120.8k). Sidechain
-share of output fell 54% → 18% (`main output %` 46.1% → 81.7%) — less work is landing in
-disposable subagent contexts, not more. All caveats, the historical hand-logged figures, and
-full per-version tables are in [`metrics/baseline-2026-08.md`](metrics/baseline-2026-08.md).
+Reading the trend, older vs v1.8: `$/session` $23.54 → $15.62; `wasted tok %` 4.5% →
+1.4%; `issues/session` 19.2 → 9.2, with the high-severity share down (2.5 → 1.3); `saved %`
+73.8% → 84.9%; `quality` unrated (0/13) at `older` vs 4.9 mean on 11/19 rated sessions at
+v1.8. Full tables for both splits, all versions, all columns are in
+[`metrics/trends-2026-09.md`](metrics/trends-2026-09.md); the earlier snapshot is
+[`metrics/baseline-2026-08.md`](metrics/baseline-2026-08.md).
 
 ### Fable-only counterfactual
 
-Across the same 51 kept sessions, actual cost sums to **$1,315.45** against a realistic
-Fable-only counterfactual of **$5,552.26** — sum ratio **×4.22** (Σ realistic / Σ actual);
-the mean per-session ratio across those 51 sessions is **×3.34**. Sessions are grouped by
-workflow version (`tools/versions.json`); from v1.1 (2026-08-28) each session also gets a
-manual 1–5 quality rating (`/rate`) so versions compare on outcome, not just cost. This is
-a cost counterfactual computed from the real per-call usage (same calls and outputs,
-worker bootstrap removed, worker content stacked on the main context, everything cached);
-it is not a quality claim — usage data carries no quality signal, and the 35% context
-threshold is the operator's, not Anthropic's.
+Across the same 125 kept sessions (both splits), actual cost sums to **$2,398.36**
+against a realistic Fable-only counterfactual of **$13,907.21** — **82.8%** saved
+($11,508.85). Sessions are grouped by workflow version (`tools/versions.json`); from v1.1
+(2026-08-28) each session also gets a manual 1–5 quality rating (`/rate`) so versions
+compare on outcome, not just cost. This is a cost counterfactual computed from the real
+per-call usage (same calls and outputs, worker bootstrap removed, worker content stacked
+on the main context, everything cached); it is not a quality claim — usage data carries no
+quality signal, and the 35% context threshold is the operator's, not Anthropic's.
 
 ## Reproduce it
 
@@ -525,7 +527,8 @@ tools/      session_metrics.py, the offline transcript analyzer, pricing.json (p
 docs/       PATTERNS.md — recurring technical traps; RECIPES.md — step-by-step procedures;
             experiments.md — model/effort A-B tests for read-heavy agents (explorer, auditor);
             postmortem — incident writeups
-metrics/    baseline-2026-08.md — the numbers above, with method and caveats
+metrics/    trends-2026-09.md — the current numbers, both splits, all versions;
+            baseline-2026-08.md — earlier snapshot, with method and caveats
             (metrics-local/TRENDS.md holds the cross-session Fable-only counterfactual,
             and per-session reports include a calls/limit column per worker)
 ```

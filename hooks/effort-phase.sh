@@ -127,7 +127,7 @@ try:
     if not want or eff == want:
         sys.exit(0)
     reason = ("STOP: effort effective=%s, settings=%s. Write ONE line to the user: "
-              "«Tu: /effort %s, apoi scrie go» and end the turn. "
+              "«You: /effort %s, then type go» and end the turn. "
               "Do not retry tools." % (eff, want, want))
     print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse",
                                              "permissionDecision": "deny",
