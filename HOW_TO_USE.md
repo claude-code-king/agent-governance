@@ -15,15 +15,14 @@ Steps, in order:
    `agents/`, `hooks/`, `commands/`, `templates/`, etc.); aborts otherwise.
 4. Prints the plan (what gets replaced, how many agents/hooks/commands) and, unless
    `--dry-run`, asks `[y/N]` to continue (skipped with `--yes`).
-5. Backs up `~/.claude/{agents,hooks,commands,skills,settings.json,CLAUDE.md,
+5. Backs up `~/.claude/{agents,hooks,commands,settings.json,CLAUDE.md,
    orchestrare*.md}` into `~/.claude-backup-<timestamp>`. If that path already
    exists (same-second re-run), it appends `-2`, `-3`, ... Aborts if the backup
    ends up with fewer entries than the source.
-6. Deletes and replaces `agents/`, `hooks/`, `commands/`, `skills/` under
+6. Deletes and replaces `agents/`, `hooks/`, `commands/` under
    `~/.claude`, and copies `CLAUDE.md`, `orchestrare.md`, `orchestrare-v17.md`,
-   `settings.json` from `templates/` and `hooks/settings.example.json`. The repo ships
-   no `skills/` yet: `easy_install.sh` backs up your `~/.claude/skills/`, deletes it
-   and recreates it empty — restore yours from the backup if you need them.
+   `settings.json` from `templates/` and `hooks/settings.example.json`.
+   `~/.claude/skills/` is not touched.
 7. Rewrites the `REPO_DIR=` line inside the installed `hooks/session-metrics.sh`
    to point at this clone (or at `$AGENT_GOVERNANCE_DIR` if you set it), so
    `TRENDS.md` generation finds the right repo later.
@@ -32,9 +31,10 @@ Steps, in order:
    10,240 bytes (above that, SessionStart truncates the injected block).
 
 `--dry-run` only prints the plan, writes nothing. `--restore <backup-dir>` reverses
-step 6: deletes the current `agents/hooks/commands/skills` and top-level files
-under `~/.claude` and copies everything from the backup dir back in, then exits —
-it does not run the rest of the install.
+step 6: it asks `[y/N]` first (skipped with `--yes`), then deletes the current
+`agents/hooks/commands` and top-level files under `~/.claude`, copies everything from
+the backup dir back in, and exits — it does not run the rest of the install. A backup
+made before this version may contain `skills/`; `--restore` does not put it back.
 
 **Left untouched, always**: `~/.claude/memory/`, `~/.claude/projects/`,
 `~/.claude/plans/`, any `history*` files, and anything outside the
@@ -62,7 +62,8 @@ or with `bash easy_install.sh --restore ~/.claude-backup-<timestamp>`.
 
 **Careful with `--restore`**: it deletes the *current* `~/.claude` install first,
 including anything you changed there after the original install (custom hooks,
-manual settings edits) — not just the engine's own files.
+manual settings edits) — not just the engine's own files. It asks `[y/N]` before
+doing so, unless you pass `--yes`.
 
 ## 2b. Don't move or delete the clone after install
 
@@ -98,3 +99,99 @@ produced by `python3 tools/session_metrics.py`, and never mid-session.
   `brew install coreutils`.
 - **Windows (Git Bash)**: untested; needs `python3` on PATH.
 - **WSL**: works like Linux.
+
+## 6. Requirements
+
+Requirements: Claude Code, Python 3.6+ (no f-strings, no walrus, no `match`; 3.7+
+recommended). No dependencies, no config file needed.
+
+Comments shaped `🔴 … — DECIZII/PATTERNS «…»` are pointers to internal decision notes
+not included in this repo. The regexes with Romanian diacritics target the Romanian
+wording of agent reports from the author's own system.
+
+## 7. Manual install, without `easy_install.sh`
+
+**Install the agents and hooks**
+
+```sh
+git clone <this-repo> ~/agent-governance
+cd ~/agent-governance
+
+cp agents/*.md   ~/.claude/agents/
+cp commands/*.md ~/.claude/commands/
+cp hooks/*.sh    ~/.claude/hooks/
+chmod +x         ~/.claude/hooks/*.sh
+```
+
+`jq` is only needed by `hooks/test-main-guards.sh`.
+
+Merge the `hooks` block from `hooks/settings.example.json` into `~/.claude/settings.json`.
+If you cloned somewhere other than `~/agent-governance`, point the metrics hook at it:
+
+```sh
+export AGENT_GOVERNANCE_DIR=/path/to/your/clone
+```
+
+**Install the policies**
+
+```sh
+cp templates/CLAUDE.global.md  ~/.claude/CLAUDE.md      # orchestration rules
+cp templates/CLAUDE.project.md /your/project/CLAUDE.md  # then fill in the brackets
+```
+
+`~/.claude/CLAUDE.md` stays small — addressing, report format, conventions any agent needs.
+The orchestration rules (which agent for which task, escalation, parallelism caps) live in
+`~/.claude/orchestrare.md` instead, injected by `hooks/session-start.sh` only into the main
+session, never into subagents. Install: `cp templates/orchestrare.md ~/.claude/orchestrare.md`,
+the hook itself into `~/.claude/hooks/`, and the SessionStart entry from
+`hooks/settings.example.json` into `~/.claude/settings.json`.
+
+## 8. Run the analyzer
+
+```sh
+python3 tools/session_metrics.py ~/.claude/projects/<project-dir>/            # all sessions
+python3 tools/session_metrics.py <session>.jsonl --md   --out report.md
+python3 tools/session_metrics.py <session>.jsonl --json --out report.json
+python3 tools/session_metrics.py ~/.claude/projects/<project-dir>/ --json --md --out-dir metrics-local/  # per-session files
+python3 tools/session_metrics.py --rename metrics-local/          # rename old <uuid>.json/.md files
+```
+
+`--out-dir DIR` writes one `<name>.json` (with `--json`) and one `<name>.md` (with `--md`)
+per session into `DIR`. `--rename DIR` renames old `<uuid>.json`/`.md` files in `DIR` to the
+new naming scheme, skipping collisions unless `--force` is given. `--ctx-warn N` sets the
+threshold for the `high_context_end` flag (default 150000). Files are named
+`YYYY-MM-DD-HHMM-<project>.json`/`.md` (local start date and time, `HHMMSS` if another
+session started the same minute, `<project>` = basename of the working directory);
+`--migrate-names DIR` renames files left over from the old `-sN-` scheme (dry-run without
+`--yes`).
+
+Run it on a single transcript and check the tests:
+
+```sh
+python3 tools/session_metrics.py --md ~/.claude/projects/<project-dir>/<session>.jsonl
+python3 tools/tests/test_v17.py     # expected: 0 failed
+```
+
+`tools/pricing.json` is optional: without it every cost is reported as `0.0`, one WARN line
+goes to stderr, and all other metrics are unaffected. On a session with no subagents and no
+governance hooks the `## v1.7` block (effort phases, advisor, low phase) is empty, while the
+generic metrics — turns, tool calls, context, reads, inefficiencies, postmortem — are all
+filled in.
+
+The `.md` report includes
+the summary plus the "Inefficiencies" list, an automatic "Postmortem" section with severity
+and recommendations, and a Fable-only cost estimate. `--trends DIR` regenerates
+`DIR/TRENDS.md`, a cross-session view of recurring inefficiencies. It opens with an
+executive summary per corpus and per version: spend, savings against the Fable-only
+realistic estimate ($ and %, cumulative across versions), estimated waste in tokens and as
+% of main input volume, waste grouped into families (reads, agent overhead, orchestration
+turns, discipline), and deltas against the previous version and against `older`. Sessions where at least
+50% of the main session's tool calls are `mcp__claude-in-chrome__*` are listed separately
+under "Excluded" and do not count toward the numbers (threshold: `--browser-threshold`,
+default 0.5; version list: `--versions PATH`). `/rate N [note]` before closing a session
+attaches a 1-5 quality rating to it (via the SessionEnd hook); `--rate NAME N` rates a
+session after the fact; TRENDS shows the mean quality per version.
+
+Nothing here calls a network service or a model. `metrics-local/` is gitignored so raw
+session data never leaves the machine.
+

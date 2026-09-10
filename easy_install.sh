@@ -44,10 +44,17 @@ if ! command -v python3 >/dev/null 2>&1; then
 fi
 
 INSTALLED_FILES="settings.json CLAUDE.md orchestrare.md orchestrare-v17.md"
-INSTALLED_DIRS="agents hooks commands skills"
+INSTALLED_DIRS="agents hooks commands"
 
 if [ -n "$RESTORE_DIR" ]; then
   [ -d "$RESTORE_DIR" ] || { echo "ERROR: backup directory not found: $RESTORE_DIR"; exit 1; }
+  echo "This deletes $CLAUDE_DIR/{$(echo "$INSTALLED_DIRS" | tr ' ' ',')},$(echo "$INSTALLED_FILES" | tr ' ' ',')"
+  echo "and restores from $RESTORE_DIR. If that backup has a skills/ dir, it is NOT restored (skills is no longer installer-managed)."
+  if [ "$ASSUME_YES" != "1" ]; then
+    printf 'Continue? [y/N] '
+    read -r reply
+    case "$reply" in y|Y|yes|YES) : ;; *) echo "Aborted."; exit 1 ;; esac
+  fi
   for d in $INSTALLED_DIRS; do safe_rm "$CLAUDE_DIR/$d"; done
   for f in $INSTALLED_FILES; do safe_rm "$CLAUDE_DIR/$f"; done
   mkdir -p "$CLAUDE_DIR"
@@ -79,7 +86,7 @@ done
 echo "Repo:      $REPO_DIR"
 echo "Target:    $CLAUDE_DIR"
 echo "Backup:    $BACKUP_DIR"
-echo "Plan: replace agents/ hooks/ commands/ skills/ settings.json CLAUDE.md orchestrare*.md"
+echo "Plan: replace agents/ hooks/ commands/ settings.json CLAUDE.md orchestrare*.md"
 echo "      copy $N_AGENTS agents, $N_HOOKS hooks (no test-*.sh), $N_COMMANDS commands"
 echo "      memory/ projects/ plans/ history* are left untouched"
 
@@ -89,7 +96,7 @@ if [ "$DRY_RUN" = "1" ]; then
 fi
 
 if [ "$ASSUME_YES" != "1" ]; then
-  printf 'This replaces your ~/.claude agents/hooks/commands/skills/settings. Backup at %s. Continue? [y/N] ' "$BACKUP_DIR"
+  printf 'This replaces your ~/.claude agents/hooks/commands/settings. Backup at %s. Continue? [y/N] ' "$BACKUP_DIR"
   read -r reply
   case "$reply" in y|Y|yes|YES) : ;; *) echo "Aborted."; exit 1 ;; esac
 fi
@@ -122,7 +129,7 @@ fi
 echo "Backup written: $BACKUP_DIR ($N_BACKED_UP of $N_SOURCES entries)"
 
 for d in $INSTALLED_DIRS; do safe_rm "$CLAUDE_DIR/$d"; done
-mkdir -p "$CLAUDE_DIR/agents" "$CLAUDE_DIR/hooks" "$CLAUDE_DIR/commands" "$CLAUDE_DIR/skills"
+mkdir -p "$CLAUDE_DIR/agents" "$CLAUDE_DIR/hooks" "$CLAUDE_DIR/commands"
 
 cp "$REPO_DIR"/agents/*.md "$CLAUDE_DIR/agents/"
 cp "$REPO_DIR"/commands/*.md "$CLAUDE_DIR/commands/"
@@ -135,7 +142,10 @@ chmod +x "$CLAUDE_DIR"/hooks/*.sh
 # 🔴 the installed copy of session-metrics.sh must point at this clone — PATTERNS «easy_install.sh»
 SM="$CLAUDE_DIR/hooks/session-metrics.sh"
 if grep -q '^REPO_DIR=' "$SM"; then
-  sed -i "s|^REPO_DIR=.*|REPO_DIR=\"\${AGENT_GOVERNANCE_DIR:-$REPO_DIR}\"|" "$SM"
+  SM_TMP="$(mktemp "$CLAUDE_DIR/hooks/session-metrics.sh.XXXXXX")"
+  sed "s|^REPO_DIR=.*|REPO_DIR=\"\${AGENT_GOVERNANCE_DIR:-$REPO_DIR}\"|" "$SM" > "$SM_TMP"
+  mv "$SM_TMP" "$SM"
+  chmod +x "$SM"
 else
   echo "WARN: REPO_DIR line not found in session-metrics.sh; TRENDS.md will not be generated"
 fi

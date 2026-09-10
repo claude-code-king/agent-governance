@@ -81,7 +81,8 @@ check("helper: tool_result cu 'claude-opus' ignorat -> fable",
       rc == 0 and m == "claude-fable-5-1", m)
 rc, m = model_of(SYNTH)
 check("helper: <synthetic> ignorat -> fable", rc == 0 and m == "claude-fable-5-1", m)
-rc, m = model_of("/nonexistent/x.jsonl")
+write(".claude/settings.json", ['{"model":"claude-fable-5-1[1m]"}'])
+rc, m = model_of("/nonexistent/x.jsonl", env={"HOME": TMP})
 check("helper: no transcript -> settings (fable, no [1m])",
       rc == 0 and "fable" in m and "[1m]" not in m, m)
 rc, m = model_of(FABLE, env={"GOV_MODEL": "claude-opus-5"})
