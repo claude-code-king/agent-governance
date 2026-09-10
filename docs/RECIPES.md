@@ -19,6 +19,8 @@ python3 tools/session_metrics.py <paths…> --json --md --out-dir metrics-local
 python3 tools/session_metrics.py --trends metrics-local
 ```
 `/rate` notes are kept automatically. Check the `quality` count before/after.
+`sed -n`/`awk` on the whole TRENDS.md is blocked by bash-mare in main (>300 lines); read it
+with `grep -n` filtered to line numbers, or via explorer.
 
 ## Hook tests and /rate
 `bash hooks/test-hooks.sh` — 39 offline cases, exit 0. `/rate` matches the note by the cwd's
@@ -155,3 +157,10 @@ after approval, `effort-phase.sh low`; same WARN.
 big heredocs written straight into the project — the thresholds are `BIG_LINES=300` (lines
 read) and `BODY_LINES=20` (heredoc lines).
 </content>
+
+## Sync offline_telemetry_script
+Manual; the public export script does not cover it:
+copy `tools/session_metrics.py` over `session_metrics.py` in the offline_telemetry_script checkout,
+then `diff -q` against pricing.json, commit with
+`-c user.name=claude_code_king -c user.email=claude_code_king@users.noreply.github.com`,
+`push origin main`.

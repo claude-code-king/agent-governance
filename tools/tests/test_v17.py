@@ -379,6 +379,87 @@ def test_reread_skips_a_file_regenerated_between_two_reads():
     assert any("notes-d.md" in d for d in flagged), flagged
 
 
+def _cf_session(name, peak_cf):
+    s = _session(name, 400000, 40000)
+    if peak_cf is not None:
+        s["counterfactual"] = {"peak_context_cf": peak_cf}
+    return s
+
+
+def test_versions_table_cf_peak_columns():
+    grp = [_cf_session("a", 200000), _cf_session("b", 500000), _cf_session("c", 1200000)]
+    v = sm.version_stats(grp, 0.35, 1000000)
+    assert v["cf_n"] == 3
+    assert v["peak_cf_max"] == 1200000 and v["peak_cf_median"] == 500000
+    assert abs(v["cf_over_rot_pct"] - 66.67) < 0.1, v["cf_over_rot_pct"]
+    assert abs(v["cf_over_window_pct"] - 33.33) < 0.1, v["cf_over_window_pct"]
+    rows = sm.versions_table(["v1.8", "v1.5"], {"v1.8": grp, "v1.5": [_cf_session("d", None)]},
+                             {}, rot_at=0.35, window=1000000)
+    row = [r for r in rows if r.startswith("| v1.8 |")][0]
+    assert "1.2M/500.0k" in row and "67% (2/3)" in row, row
+    other = [r for r in rows if r.startswith("| v1.5 |")][0]
+    assert sm.version_stats([_cf_session("d", None)])["cf_n"] == 0
+    assert "| — | — |" in other, other
+    assert any("single-context threshold: rot 350.0k · window 1.0M" in r for r in rows), rows
+
+
+CACHE_FIXTURE = os.path.join(HERE, "fixtures", "v18-cache.jsonl")
+
+
+def cache_flags():
+    return analyzed(fixture=CACHE_FIXTURE)["flags"]
+
+
+def test_cache_rewrite_main_skips_a_pause_over_an_hour():
+    rw = [f for f in cache_flags() if f["code"] == "cache_rewrite_main"]
+    assert len(rw) == 1, rw                      # m3 rewrites too, but 1h55m later
+    ev = rw[0]["evidence"]
+    assert ev["tokens"] == 45000 and ev["gap_s"] == 300.0, ev
+    assert ev["prev_tokens"] == 40000 and rw[0]["severity"] == "medium"
+    assert rw[0].get("est_wasted_tokens", 0) == 0  # tokens are not moved into wasted%
+
+
+def test_agent_resume_rewrite_is_priced_at_the_5m_write_rate():
+    rs = [f for f in cache_flags() if f["code"] == "agent_resume_rewrite"]
+    assert len(rs) == 1 and rs[0]["scope"] == "scripter-complex#1", rs
+    ev = rs[0]["evidence"]
+    assert ev["kind"] == "resume" and ev["gap_s"] == 550.0 and ev["tokens"] == 30000, ev
+    assert abs(ev["usd"] - 30000 * 12.5 / 1e6) < 1e-6, ev   # claude-fable-5-1 cache_write_5m
+    assert rs[0].get("est_wasted_tokens", 0) == 0
+
+
+def test_scripter_below_threshold():
+    sb = [f for f in cache_flags() if f["code"] == "scripter_below_threshold"]
+    assert len(sb) == 1 and sb[0]["severity"] == "low", sb
+    assert sb[0]["evidence"]["files_changed"] == 2, sb
+
+
+def _flag_session(name, codes):
+    s = _session(name, 400000, 40000)
+    s["flags"] = codes
+    return s
+
+
+def test_versions_table_cache_columns_are_dashes_without_data():
+    with_data = _flag_session("a", [
+        {"code": "cache_rewrite_main", "evidence": {"tokens": 45000}},
+        {"code": "cache_rewrite_main", "evidence": {"tokens": 15000}},
+        {"code": "agent_resume_rewrite", "evidence": {"usd": 0.375}},
+        {"code": "scripter_below_threshold", "evidence": {"files_changed": 2}}])
+    old = _flag_session("b", [{"code": "reread"}])       # analyzed before the flags existed
+    v = sm.version_stats([with_data])
+    assert (v["cache_rw_n"], v["cache_rw_tok"], v["resume_n"], v["scr_below_n"]) == (2, 60000, 1, 1)
+    assert v["cache_flags_seen"] and sm.version_stats([old])["cache_flags_seen"] is False
+    assert sm.version_stats([old])["cache_rw_per"] is None
+    rows = sm.versions_table(["v1.8", "v1.7"], {"v1.8": [with_data], "v1.7": [old]}, {})
+    row = [r for r in rows if r.startswith("| v1.8 |")][0]
+    assert row.endswith("| 2 / 60.0k | 1 / $0.38 | 1 |"), row
+    assert [r for r in rows if r.startswith("| v1.7 |")][0].endswith("| — | — | — |")
+    empty = sm.versions_table(["v1.6"], {"v1.6": []}, {})
+    blank = [r for r in empty if r.startswith("| v1.6 |")][0]
+    assert blank.count("|") == empty[2].count("|") == row.count("|"), blank
+
+
 if __name__ == "__main__":
     failed = 0
     for name, fn in sorted(globals().items()):

@@ -119,6 +119,11 @@ The hook skips it and keeps looking further back. A `Bash` call that contains th
 basename (a build/test run on it) resets the counter: the result may call for a reread.
 A Read with `offset`/`limit` over ≤60 lines stays allowed — it's a spot check, not a reread.
 
+Any second whole-file Read of the same path is denied for read-only agents too
+(`explorer*`, `auditor`): an explorer-max that read the same PDF twice cost 124k tokens.
+They get only this rule — no >300-line limit and no `pending_own_write`, because reading is
+their job. A Read with `offset`/`limit`, or a PDF with different `pages`, stays allowed.
+
 ## Reread after regeneration
 A second read of a file that was regenerated in between — by `magick`/`convert`, a build, or
 similar — is not waste. The analyzer exempts the Read if an intervening Bash command whose
@@ -160,3 +165,40 @@ main at 163k-187k while two implementers passed 217k/182k undetected). So `conte
 rebuilds `<dir(transcript_path)>/<session_id>/subagents/agent-<agent_id>.jsonl` and returns
 without measuring when that file is missing — it never falls back to main's transcript.
 </content>
+
+## Session folder vs session file
+`~/.claude/projects/<slug>/<uuid>/` holds only `subagents/`; the session itself is the
+sibling `<uuid>.jsonl`. Users (Windows Explorer hides extensions) pass the folder and get
+`no .jsonl found`. `collect_targets` falls back to `<folder>.jsonl` when a folder has no
+`.jsonl` inside; the error message names the two valid targets.
+
+## Cache TTL 5m for sub-agents
+Sub-agents only ever write a 5m cache, so any pause over 300 s costs a full context rewrite
+(`agent_resume_rewrite`, scope = the agent, wasted 0); still cheaper than a fresh agent under
+150k. `cache_rewrite_main` is the same idea in main but **per call** (this call rewrote while
+the previous one still had over 30k cached, under an hour before); `cache_churn_main` is per
+session (share of cache writes over the whole run) — one does not tell you the other.
+
+## Image blocks in the analyzer
+A `tool_result` with an `image` block has no `text` key, so `text_of` falls back to
+`json.dumps(block)` and counts the whole base64 payload (a 300 KB PNG shows up as 400k
+chars, while the real cost is about 1.5k tokens). `result_chars` counts each image block as
+`IMAGE_CHARS = 6000` instead; `text_of` itself stays untouched, the launch/files regexes
+depend on it. `image_in_main` decides on the file size on disk (`IMG_BIG_BYTES`, 200 KB —
+the same threshold as hooks/read-mare.sh), not on a `-mic`/`-small` name.
+
+## Hook counts lines, analyzer counts chars
+`hooks/bash-mare.sh` used to deny only over `BIG_LINES=300`, while the analyzer flags
+`big_tool_result_main` over 10000 chars — a 120-line md of 11k chars passed the hook and was
+flagged afterwards. `BIG_CHARS=10000` (file size on disk) is the second threshold, applied to
+the same reader arguments; a `sed -n` with a range exits earlier and is never measured.
+`hooks/read-mare.sh` applies the 200 KB image rule regardless of the `-mic`/`-small` name
+(the name only suppresses the reminder), same as `image_in_main` in the analyzer.
+On the analyzer side, `BATCH_MUTATING_RE` in `tools/session_metrics.py` only lists commands that
+really change state: `sed -i`, `rm|mv|cp|mkdir|touch|chmod|tee` matched at command-name position
+(start, or after `;`, `&&`, `|`, `$(`), writing `git` verbs (`add|commit|push|checkout|stash|
+reset|rebase|merge`) and a redirect to a file. Verifiers (`npm`, `npx`, `node x`, `python x.py`,
+`bash x.sh`, `git status|log|diff|show`) are NOT mutating: they do not make the next call depend
+on the previous one, so such a chain stays batchable. Name-position matching keeps `format` and
+`rmdir` out of the `rm` branch. The redirect branch carries `(?!/dev/null)` (and excludes `2>&1`
+/ `>&`), so a read-only `... >/dev/null` still qualifies as batchable.
