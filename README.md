@@ -93,7 +93,7 @@ deviations. Protocol, lots and confounds: [`docs/experiments.md`](docs/experimen
 ## Install
 
 ```sh
-git clone <this-repo> ~/agent-governance
+git clone https://github.com/claude-code-king/agent-governance.git ~/agent-governance
 bash ~/agent-governance/easy_install.sh
 ```
 

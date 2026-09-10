@@ -114,7 +114,7 @@ wording of agent reports from the author's own system.
 **Install the agents and hooks**
 
 ```sh
-git clone <this-repo> ~/agent-governance
+git clone https://github.com/claude-code-king/agent-governance.git ~/agent-governance
 cd ~/agent-governance
 
 cp agents/*.md   ~/.claude/agents/
